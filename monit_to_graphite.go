@@ -9,6 +9,7 @@ import (
     "net"
     "net/http"
     "strconv"
+    "strings"
     "os"
     "errors"
 )
@@ -23,9 +24,6 @@ var Usage = func() {
 }
 
 type Server struct {
-    Id            string `xml:"id"`
-    Incarnation   int `xml:"incarnation"`
-    Version       string `xml:"version"`
     Uptime        int `xml:"uptime"`
     Poll          int `xml:"poll"`
     Localhostname string `xml:"localhostname"`
@@ -38,6 +36,7 @@ type Platform struct {
     Machine string `xml:"machine"`
     Cpu     int `xml:"cpu"`
     Memory  int `xml:"memory"`
+    Swap    int `xml:"swap"`
 }
 
 type Memory struct {
@@ -66,14 +65,15 @@ type Cpusys struct {
 
 type System struct {
     Load   Load `xml:"load"`
-    Cpusys Cpusys `xml:"cpusys"`
+    Cpusys Cpusys `xml:"cpu"`
     Memory Memory `xml:"memory"`
 }
 
 type Service struct {
+    Prefix        string
     Collected_Sec int64 `xml:"collected_sec"`
-    Type          int `xml:"attr"`
-    Name          string `xml:"name"`
+    Type          int `xml:"type"`
+    Name          string `xml:"name,attr"`
     Status        int `xml:"status"`
     Monitor       int `xml:"monitor"`
     MonitorMode   int `xml:"monitormode"`
@@ -84,40 +84,61 @@ type Service struct {
     Children      int `xml:"children"`
     Memory        Memory `xml:"memory"`
     Cpu           Cpu `xml:"cpu"`
-    Sytem         System `xml:"system"`
+    System         System `xml:"system"`
 }
 
 type Monit struct {
+    Id            string `xml:"id,attr"`
+    Incarnation   int `xml:"incarnation,attr"`
+    Version       string `xml:"version,attr"`
     XMLName  xml.Name `xml:"monit"`
     Server   Server `xml:"server"`
     Platform Platform `xml:"platform"`
-    Service  []Service `xml:"service"`
+    Service  []Service `xml:"services>service"`
 }
 
 type Graphite struct {
     addr string
 }
 
-var serviceq chan *Service
+// This was causing services A, B to be added to queue but B, B to be read from the queue.
+// var serviceq chan *Service
+var serviceq chan Service
 
 func (graphite *Graphite) Setup() {
     log.Println("starting")
-    serviceq = make(chan *Service)
+    serviceq = make(chan Service)
     for {
         service := <-serviceq
-        if service.Type == 5 {
-            continue
+
+        log.Println("Sending ", service)
+
+        switch service.Type {
+            case 5:
+                go graphite.Send(service.Prefix+"."+service.Name+".cpu.user", strconv.FormatFloat(service.System.Cpusys.User,'g',-1,64), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".cpu.system", strconv.FormatFloat(service.System.Cpusys.System,'g',-1,64), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".cpu.wait", strconv.FormatFloat(service.System.Cpusys.Wait,'g',-1,64), service.Collected_Sec)
+
+                go graphite.Send(service.Prefix+"."+service.Name+".load.avg01", strconv.FormatFloat(service.System.Load.Avg01,'g',-1,64), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".load.avg05", strconv.FormatFloat(service.System.Load.Avg05,'g',-1,64), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".load.avg15", strconv.FormatFloat(service.System.Load.Avg15,'g',-1,64), service.Collected_Sec)
+
+                go graphite.Send(service.Prefix+"."+service.Name+".memory.percent", strconv.FormatFloat(service.System.Memory.Percent,'g',-1,64), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".memory.percenttotal", strconv.FormatFloat(service.System.Memory.Percenttotal,'g',-1,64), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".memory.kilobyte", strconv.Itoa(service.System.Memory.Kilobyte), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".memory.kilobytetotal", strconv.Itoa(service.System.Memory.Kilobytetotal), service.Collected_Sec)
+            default:
+                go graphite.Send(service.Prefix+"."+service.Name+".status", strconv.Itoa(service.Status), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".monitor", strconv.Itoa(service.Monitor), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".uptime", strconv.Itoa(service.Uptime), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".children", strconv.Itoa(service.Children), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".memory.percent", strconv.FormatFloat(service.Memory.Percent, 'g', -1, 64), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".memory.percent_total", strconv.FormatFloat(service.Memory.Percenttotal, 'g', -1, 64), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".memory.kilobyte", strconv.Itoa(service.Memory.Kilobyte), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".memory.kylobytetotal", strconv.Itoa(service.Memory.Kilobytetotal), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".cpu.percent", strconv.FormatFloat(service.Cpu.Percent, 'g', -1, 64), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".cpu.percenttotal", strconv.FormatFloat(service.Cpu.Percenttotal, 'g', -1, 64), service.Collected_Sec)
         }
-        go graphite.Send(service.Name+".status", strconv.Itoa(service.Status), service.Collected_Sec)
-        go graphite.Send(service.Name+".monitor", strconv.Itoa(service.Monitor), service.Collected_Sec)
-        go graphite.Send(service.Name+".uptime", strconv.Itoa(service.Uptime), service.Collected_Sec)
-        go graphite.Send(service.Name+".children", strconv.Itoa(service.Children), service.Collected_Sec)
-        go graphite.Send(service.Name+".memory.percent", strconv.FormatFloat(service.Memory.Percent, 'g', -1, 64), service.Collected_Sec)
-        go graphite.Send(service.Name+".memory.percent_total", strconv.FormatFloat(service.Memory.Percenttotal, 'g', -1, 64), service.Collected_Sec)
-        go graphite.Send(service.Name+".memory.kilobyte", strconv.Itoa(service.Memory.Kilobyte), service.Collected_Sec)
-        go graphite.Send(service.Name+".memory.kylobytetotal", strconv.Itoa(service.Memory.Kilobytetotal), service.Collected_Sec)
-        go graphite.Send(service.Name+".cpu.percent", strconv.FormatFloat(service.Cpu.Percent, 'g', -1, 64), service.Collected_Sec)
-        go graphite.Send(service.Name+".cpu.percenttotal", strconv.FormatFloat(service.Cpu.Percenttotal, 'g', -1, 64), service.Collected_Sec)
     }
 }
 
@@ -158,9 +179,26 @@ func MonitServer(w http.ResponseWriter, req *http.Request) {
     if err != nil {
         log.Fatal(err)
     }
+    
     log.Println("Got message from", monit.Server.Localhostname)
+
+    var shortname string
+    i := strings.Index(monit.Server.Localhostname, ".")
+    if i != -1 {
+        shortname = monit.Server.Localhostname[:i] 
+    } else {
+        shortname = monit.Server.Localhostname
+    }
+
     for _, service := range monit.Service {
-        serviceq <- &service
+        if service.Type == 5 {
+            service.Name = "system"
+            service.Prefix = shortname
+        } else {
+            service.Prefix = shortname + ".services"
+        }
+        log.Println("Adding service to serviceq: ", service)
+        serviceq <- service
     }
 }
 
