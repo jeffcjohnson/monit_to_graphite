@@ -69,6 +69,18 @@ type System struct {
     Memory Memory `xml:"memory"`
 }
 
+type Block struct {
+    Percent   float64 `xml:"percent"`
+    Usage     float64 `xml:"usage"`
+    Total     float64 `xml:"total"`
+}
+
+type Inode struct {
+    Percent   float64 `xml:"percent"`
+    Usage     float64 `xml:"usage"`
+    Total     float64 `xml:"total"`
+}
+
 type Service struct {
     Prefix        string
     Collected_Sec int64 `xml:"collected_sec"`
@@ -84,7 +96,9 @@ type Service struct {
     Children      int `xml:"children"`
     Memory        Memory `xml:"memory"`
     Cpu           Cpu `xml:"cpu"`
-    System         System `xml:"system"`
+    System        System `xml:"system"`
+    Block         Block `xml:"block"`
+    Inode         Inode `xml:"inode"`
 }
 
 type Monit struct {
@@ -101,6 +115,15 @@ type Graphite struct {
     addr string
 }
 
+const (
+    MonitTypeFileSystem int = 0
+    MonitTypeDirectory  = 1
+    MonitTypeFile       = 2
+    MonitTypeProcess    = 3
+    MonitTypeSystem     = 5
+    MonitTypeProgram    = 7
+)
+
 // This was causing services A, B to be added to queue but B, B to be read from the queue.
 // var serviceq chan *Service
 var serviceq chan Service
@@ -114,7 +137,9 @@ func (graphite *Graphite) Setup() {
         // log.Println("Sending ", service)
 
         switch service.Type {
-            case 5:
+            case MonitTypeSystem:
+                service.Name = "system"
+
                 go graphite.Send(service.Prefix+"."+service.Name+".cpu.user", strconv.FormatFloat(service.System.Cpusys.User,'g',-1,64), service.Collected_Sec)
                 go graphite.Send(service.Prefix+"."+service.Name+".cpu.system", strconv.FormatFloat(service.System.Cpusys.System,'g',-1,64), service.Collected_Sec)
                 go graphite.Send(service.Prefix+"."+service.Name+".cpu.wait", strconv.FormatFloat(service.System.Cpusys.Wait,'g',-1,64), service.Collected_Sec)
@@ -127,17 +152,35 @@ func (graphite *Graphite) Setup() {
                 go graphite.Send(service.Prefix+"."+service.Name+".memory.percenttotal", strconv.FormatFloat(service.System.Memory.Percenttotal,'g',-1,64), service.Collected_Sec)
                 go graphite.Send(service.Prefix+"."+service.Name+".memory.kilobyte", strconv.Itoa(service.System.Memory.Kilobyte), service.Collected_Sec)
                 go graphite.Send(service.Prefix+"."+service.Name+".memory.kilobytetotal", strconv.Itoa(service.System.Memory.Kilobytetotal), service.Collected_Sec)
-            default:
+
+            case MonitTypeProcess:
+                service.Prefix = service.Prefix + ".process"
+
                 go graphite.Send(service.Prefix+"."+service.Name+".status", strconv.Itoa(service.Status), service.Collected_Sec)
                 go graphite.Send(service.Prefix+"."+service.Name+".monitor", strconv.Itoa(service.Monitor), service.Collected_Sec)
                 go graphite.Send(service.Prefix+"."+service.Name+".uptime", strconv.Itoa(service.Uptime), service.Collected_Sec)
                 go graphite.Send(service.Prefix+"."+service.Name+".children", strconv.Itoa(service.Children), service.Collected_Sec)
+
                 go graphite.Send(service.Prefix+"."+service.Name+".memory.percent", strconv.FormatFloat(service.Memory.Percent, 'g', -1, 64), service.Collected_Sec)
                 go graphite.Send(service.Prefix+"."+service.Name+".memory.percent_total", strconv.FormatFloat(service.Memory.Percenttotal, 'g', -1, 64), service.Collected_Sec)
                 go graphite.Send(service.Prefix+"."+service.Name+".memory.kilobyte", strconv.Itoa(service.Memory.Kilobyte), service.Collected_Sec)
                 go graphite.Send(service.Prefix+"."+service.Name+".memory.kylobytetotal", strconv.Itoa(service.Memory.Kilobytetotal), service.Collected_Sec)
+
                 go graphite.Send(service.Prefix+"."+service.Name+".cpu.percent", strconv.FormatFloat(service.Cpu.Percent, 'g', -1, 64), service.Collected_Sec)
                 go graphite.Send(service.Prefix+"."+service.Name+".cpu.percenttotal", strconv.FormatFloat(service.Cpu.Percenttotal, 'g', -1, 64), service.Collected_Sec)
+
+            case MonitTypeFileSystem:
+                service.Prefix = service.Prefix + ".filesystem"
+
+                go graphite.Send(service.Prefix+"."+service.Name+".block.percent", strconv.FormatFloat(service.Block.Percent, 'g', -1, 64), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".block.usage", strconv.FormatFloat(service.Block.Usage, 'g', -1, 64), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".block.total", strconv.FormatFloat(service.Block.Total, 'g', -1, 64), service.Collected_Sec)
+
+                go graphite.Send(service.Prefix+"."+service.Name+".inode.percent", strconv.FormatFloat(service.Inode.Percent, 'g', -1, 64), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".inode.usage", strconv.FormatFloat(service.Inode.Usage, 'g', -1, 64), service.Collected_Sec)
+                go graphite.Send(service.Prefix+"."+service.Name+".inode.total", strconv.FormatFloat(service.Inode.Total, 'g', -1, 64), service.Collected_Sec)
+                
+            default:
         }
     }
 }
@@ -171,9 +214,9 @@ func MonitServer(w http.ResponseWriter, req *http.Request) {
     defer req.Body.Close()
     var monit Monit
     p := xml.NewDecoder(req.Body)
-    //b := new(bytes.Buffer)
-    //b.ReadFrom(req.Body)
-    //log.Fatal(b.String())
+    // b := new(bytes.Buffer)
+    // b.ReadFrom(req.Body)
+    // log.Fatal(b.String())
     p.CharsetReader = CharsetReader
     err := p.DecodeElement(&monit, nil)
     if err != nil {
@@ -191,12 +234,7 @@ func MonitServer(w http.ResponseWriter, req *http.Request) {
     }
 
     for _, service := range monit.Service {
-        if service.Type == 5 {
-            service.Name = "system"
-            service.Prefix = shortname
-        } else {
-            service.Prefix = shortname + ".services"
-        }
+        service.Prefix = shortname
         // log.Println("Adding service to serviceq: ", service)
         serviceq <- service
     }
