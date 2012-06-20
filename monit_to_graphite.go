@@ -111,7 +111,7 @@ func (graphite *Graphite) Setup() {
     for {
         service := <-serviceq
 
-        log.Println("Sending ", service)
+        // log.Println("Sending ", service)
 
         switch service.Type {
             case 5:
@@ -197,7 +197,7 @@ func MonitServer(w http.ResponseWriter, req *http.Request) {
         } else {
             service.Prefix = shortname + ".services"
         }
-        log.Println("Adding service to serviceq: ", service)
+        // log.Println("Adding service to serviceq: ", service)
         serviceq <- service
     }
 }
