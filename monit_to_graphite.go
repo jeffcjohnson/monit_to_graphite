@@ -14,7 +14,7 @@ import (
     "errors"
 )
 
-var carbonAddress *string = flag.String("c", "localhost:2003", "carbon address")
+var carbonAddress *string = flag.String("c", "127.0.0.1:2003", "carbon address")
 var forwarderAddress *string = flag.String("l", ":3005", "forwarder listening address")
 
 var ErrHelp = errors.New("flag: help requested")
@@ -154,6 +154,7 @@ func (graphite *Graphite) Setup() {
                 go graphite.Send(service.Prefix+"."+service.Name+".memory.kilobytetotal", strconv.Itoa(service.System.Memory.Kilobytetotal), service.Collected_Sec)
 
             case MonitTypeProcess:
+                /* Getting too many open files
                 service.Prefix = service.Prefix + ".process"
 
                 go graphite.Send(service.Prefix+"."+service.Name+".status", strconv.Itoa(service.Status), service.Collected_Sec)
@@ -168,6 +169,7 @@ func (graphite *Graphite) Setup() {
 
                 go graphite.Send(service.Prefix+"."+service.Name+".cpu.percent", strconv.FormatFloat(service.Cpu.Percent, 'g', -1, 64), service.Collected_Sec)
                 go graphite.Send(service.Prefix+"."+service.Name+".cpu.percenttotal", strconv.FormatFloat(service.Cpu.Percenttotal, 'g', -1, 64), service.Collected_Sec)
+                */
 
             case MonitTypeFileSystem:
                 service.Prefix = service.Prefix + ".filesystem"
@@ -208,6 +210,7 @@ func (graphite *Graphite) Send(metric string, value string, timestamp int64) {
     buffer := bytes.NewBufferString("")
     fmt.Fprintf(buffer, "monit.%s %s %d\n", metric, value, timestamp)
     conn.Write(buffer.Bytes())
+    conn.Close()
 }
 
 func MonitServer(w http.ResponseWriter, req *http.Request) {
