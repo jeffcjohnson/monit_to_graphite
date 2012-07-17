@@ -12,10 +12,8 @@ import (
     "strings"
     "os"
     "errors"
+    "time"
 )
-
-var carbonAddress *string = flag.String("c", "127.0.0.1:2003", "carbon address")
-var forwarderAddress *string = flag.String("l", ":3005", "forwarder listening address")
 
 var ErrHelp = errors.New("flag: help requested")
 var Usage = func() {
@@ -124,70 +122,88 @@ const (
     MonitTypeProgram    = 7
 )
 
-// This was causing services A, B to be added to queue but B, B to be read from the queue.
-// var serviceq chan *Service
-var serviceq chan Service
+type Metric struct {
+    metric string
+    value string
+    timestamp int64
+}
 
-func (graphite *Graphite) Setup() {
-    log.Println("starting")
-    serviceq = make(chan Service)
+func ProcessServices(serviceq chan Service, metricq chan Metric) {
     for {
         service := <-serviceq
-
-        // log.Println("Sending ", service)
 
         switch service.Type {
             case MonitTypeSystem:
                 service.Name = "system"
 
-                go graphite.Send(service.Prefix+"."+service.Name+".cpu.user", strconv.FormatFloat(service.System.Cpusys.User,'g',-1,64), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".cpu.system", strconv.FormatFloat(service.System.Cpusys.System,'g',-1,64), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".cpu.wait", strconv.FormatFloat(service.System.Cpusys.Wait,'g',-1,64), service.Collected_Sec)
+                metricq <- Metric{ service.Prefix+"."+service.Name+".cpu.user", strconv.FormatFloat(service.System.Cpusys.User,'g',-1,64), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".cpu.system", strconv.FormatFloat(service.System.Cpusys.System,'g',-1,64), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".cpu.wait", strconv.FormatFloat(service.System.Cpusys.Wait,'g',-1,64), service.Collected_Sec }
 
-                go graphite.Send(service.Prefix+"."+service.Name+".load.avg01", strconv.FormatFloat(service.System.Load.Avg01,'g',-1,64), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".load.avg05", strconv.FormatFloat(service.System.Load.Avg05,'g',-1,64), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".load.avg15", strconv.FormatFloat(service.System.Load.Avg15,'g',-1,64), service.Collected_Sec)
+                metricq <- Metric{ service.Prefix+"."+service.Name+".load.avg01", strconv.FormatFloat(service.System.Load.Avg01,'g',-1,64), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".load.avg05", strconv.FormatFloat(service.System.Load.Avg05,'g',-1,64), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".load.avg15", strconv.FormatFloat(service.System.Load.Avg15,'g',-1,64), service.Collected_Sec }
 
-                go graphite.Send(service.Prefix+"."+service.Name+".memory.percent", strconv.FormatFloat(service.System.Memory.Percent,'g',-1,64), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".memory.percenttotal", strconv.FormatFloat(service.System.Memory.Percenttotal,'g',-1,64), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".memory.kilobyte", strconv.Itoa(service.System.Memory.Kilobyte), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".memory.kilobytetotal", strconv.Itoa(service.System.Memory.Kilobytetotal), service.Collected_Sec)
+                metricq <- Metric{ service.Prefix+"."+service.Name+".memory.percent", strconv.FormatFloat(service.System.Memory.Percent,'g',-1,64), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".memory.percenttotal", strconv.FormatFloat(service.System.Memory.Percenttotal,'g',-1,64), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".memory.kilobyte", strconv.Itoa(service.System.Memory.Kilobyte), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".memory.kilobytetotal", strconv.Itoa(service.System.Memory.Kilobytetotal), service.Collected_Sec }
 
             case MonitTypeProcess:
                 /* Getting too many open files
                 service.Prefix = service.Prefix + ".process"
 
-                go graphite.Send(service.Prefix+"."+service.Name+".status", strconv.Itoa(service.Status), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".monitor", strconv.Itoa(service.Monitor), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".uptime", strconv.Itoa(service.Uptime), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".children", strconv.Itoa(service.Children), service.Collected_Sec)
+                metricq <- Metric{ service.Prefix+"."+service.Name+".status", strconv.Itoa(service.Status), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".monitor", strconv.Itoa(service.Monitor), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".uptime", strconv.Itoa(service.Uptime), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".children", strconv.Itoa(service.Children), service.Collected_Sec }
 
-                go graphite.Send(service.Prefix+"."+service.Name+".memory.percent", strconv.FormatFloat(service.Memory.Percent, 'g', -1, 64), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".memory.percent_total", strconv.FormatFloat(service.Memory.Percenttotal, 'g', -1, 64), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".memory.kilobyte", strconv.Itoa(service.Memory.Kilobyte), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".memory.kylobytetotal", strconv.Itoa(service.Memory.Kilobytetotal), service.Collected_Sec)
+                metricq <- Metric{ service.Prefix+"."+service.Name+".memory.percent", strconv.FormatFloat(service.Memory.Percent, 'g', -1, 64), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".memory.percent_total", strconv.FormatFloat(service.Memory.Percenttotal, 'g', -1, 64), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".memory.kilobyte", strconv.Itoa(service.Memory.Kilobyte), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".memory.kylobytetotal", strconv.Itoa(service.Memory.Kilobytetotal), service.Collected_Sec }
 
-                go graphite.Send(service.Prefix+"."+service.Name+".cpu.percent", strconv.FormatFloat(service.Cpu.Percent, 'g', -1, 64), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".cpu.percenttotal", strconv.FormatFloat(service.Cpu.Percenttotal, 'g', -1, 64), service.Collected_Sec)
+                metricq <- Metric{ service.Prefix+"."+service.Name+".cpu.percent", strconv.FormatFloat(service.Cpu.Percent, 'g', -1, 64), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".cpu.percenttotal", strconv.FormatFloat(service.Cpu.Percenttotal, 'g', -1, 64), service.Collected_Sec }
                 */
 
             case MonitTypeFileSystem:
                 service.Prefix = service.Prefix + ".filesystem"
 
-                go graphite.Send(service.Prefix+"."+service.Name+".block.percent", strconv.FormatFloat(service.Block.Percent, 'g', -1, 64), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".block.usage", strconv.FormatFloat(service.Block.Usage, 'g', -1, 64), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".block.total", strconv.FormatFloat(service.Block.Total, 'g', -1, 64), service.Collected_Sec)
+                metricq <- Metric{ service.Prefix+"."+service.Name+".block.percent", strconv.FormatFloat(service.Block.Percent, 'g', -1, 64), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".block.usage", strconv.FormatFloat(service.Block.Usage, 'g', -1, 64), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".block.total", strconv.FormatFloat(service.Block.Total, 'g', -1, 64), service.Collected_Sec }
 
-                go graphite.Send(service.Prefix+"."+service.Name+".inode.percent", strconv.FormatFloat(service.Inode.Percent, 'g', -1, 64), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".inode.usage", strconv.FormatFloat(service.Inode.Usage, 'g', -1, 64), service.Collected_Sec)
-                go graphite.Send(service.Prefix+"."+service.Name+".inode.total", strconv.FormatFloat(service.Inode.Total, 'g', -1, 64), service.Collected_Sec)
+                metricq <- Metric{ service.Prefix+"."+service.Name+".inode.percent", strconv.FormatFloat(service.Inode.Percent, 'g', -1, 64), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".inode.usage", strconv.FormatFloat(service.Inode.Usage, 'g', -1, 64), service.Collected_Sec }
+                metricq <- Metric{ service.Prefix+"."+service.Name+".inode.total", strconv.FormatFloat(service.Inode.Total, 'g', -1, 64), service.Collected_Sec }
                 
             default:
         }
     }
 }
 
-func (graphite *Graphite) Send(metric string, value string, timestamp int64) {
+func ProcessMetrics(metricq chan Metric, graphite *Graphite) {
+    buffer := bytes.NewBufferString("")
+    var count int = 0
+    for {
+        select {
+        case metric := <-metricq:
+            fmt.Fprintf(buffer, "monit.%s %s %d\n", metric.metric, metric.value, metric.timestamp)
+            count = count + 1
+        case <-time.After(1 * time.Second):
+            if buffer.Len() > 0 {
+                log.Println("metrics sent to graphite:", count)
+                graphite.Send(buffer)
+                buffer.Reset()
+                count = 0
+            }
+        }
+    }
+}
+
+
+func (graphite *Graphite) Send(buffer *bytes.Buffer) {
     var conn net.Conn
     var err error
     for i:=0; i<=5; i++ {
@@ -207,11 +223,10 @@ func (graphite *Graphite) Send(metric string, value string, timestamp int64) {
             break
         }
     }
-    buffer := bytes.NewBufferString("")
-    fmt.Fprintf(buffer, "monit.%s %s %d\n", metric, value, timestamp)
     conn.Write(buffer.Bytes())
-    conn.Close()
 }
+
+var serviceq = make(chan Service)
 
 func MonitServer(w http.ResponseWriter, req *http.Request) {
     defer req.Body.Close()
@@ -226,7 +241,7 @@ func MonitServer(w http.ResponseWriter, req *http.Request) {
         log.Fatal(err)
     }
     
-    log.Println("Got message from", monit.Server.Localhostname)
+    // log.Println("Got message from", monit.Server.Localhostname)
 
     var shortname string
     i := strings.Index(monit.Server.Localhostname, ".")
@@ -238,16 +253,22 @@ func MonitServer(w http.ResponseWriter, req *http.Request) {
 
     for _, service := range monit.Service {
         service.Prefix = shortname
-        // log.Println("Adding service to serviceq: ", service)
         serviceq <- service
     }
 }
 
 func main() {
     flag.Parse()
+    var carbonAddress *string = flag.String("c", "127.0.0.1:2003", "carbon address")
+    var forwarderAddress *string = flag.String("l", ":3005", "forwarder listening address")
+
     log.Println("Forwarding m/monit to ", *carbonAddress)
-    graphite := Graphite{addr: *carbonAddress}
-    go graphite.Setup()
+
+    graphite := &Graphite{addr: *carbonAddress}
+    metricq := make(chan Metric)
+
+    go ProcessServices(serviceq,metricq)
+    go ProcessMetrics(metricq,graphite)
 
     http.HandleFunc("/collector", MonitServer)
     log.Println("Forwarder listening input on: ", *forwarderAddress)
