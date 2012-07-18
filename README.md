@@ -6,7 +6,7 @@ The code is intended to forward events emitted by monit via it's m/monit interfa
 
 You need go r1
 
-go get github.com/hellvinz/monit_to_graphite
+go get github.com/jeffcjohnson/monit_to_graphite
 
 ## Setup
 
