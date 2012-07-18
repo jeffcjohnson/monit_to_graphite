@@ -184,20 +184,21 @@ func ProcessServices(serviceq chan Service, metricq chan Metric) {
 }
 
 func ProcessMetrics(metricq chan Metric, graphite *Graphite) {
+    ticker := time.Tick(1 * time.Second)
     buffer := bytes.NewBufferString("")
     var count int = 0
     for {
         select {
-        case metric := <-metricq:
-            fmt.Fprintf(buffer, "monit.%s %s %d\n", metric.metric, metric.value, metric.timestamp)
-            count = count + 1
-        case <-time.After(1 * time.Second):
-            if buffer.Len() > 0 {
+        case <-ticker:
+            if count > 0 {
                 log.Println("metrics sent to graphite:", count)
                 graphite.Send(buffer)
                 buffer.Reset()
                 count = 0
             }
+        case metric := <-metricq:
+            fmt.Fprintf(buffer, "monit.%s %s %d\n", metric.metric, metric.value, metric.timestamp)
+            count++
         }
     }
 }
