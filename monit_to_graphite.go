@@ -15,6 +15,10 @@ import (
     "time"
 )
 
+var carbonAddress *string = flag.String("c", "127.0.0.1:2003", "carbon address")
+var forwarderAddress *string = flag.String("l", ":3005", "forwarder listening address")
+var debug *bool = flag.Bool("d", false, "print the first m/monit xml message and exit")
+
 var ErrHelp = errors.New("flag: help requested")
 var Usage = func() {
     fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
@@ -253,7 +257,7 @@ func MonitServer(w http.ResponseWriter, req *http.Request) {
     var monit Monit
     p := xml.NewDecoder(req.Body)
 
-    if debug {
+    if *debug {
         b := new(bytes.Buffer)
         b.ReadFrom(req.Body)
         log.Fatal(b.String())
@@ -281,13 +285,10 @@ func MonitServer(w http.ResponseWriter, req *http.Request) {
     }
 }
 
-var debug = false
+
 
 func main() {
     flag.Parse()
-    var carbonAddress *string = flag.String("c", "127.0.0.1:2003", "carbon address")
-    var forwarderAddress *string = flag.String("l", ":3005", "forwarder listening address")
-    flag.BoolVar(&debug, "d", false, "print the first m/monit xml message and exit")
 
     log.Println("Forwarding m/monit to ", *carbonAddress)
 
