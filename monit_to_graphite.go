@@ -266,22 +266,22 @@ func MonitServer(w http.ResponseWriter, req *http.Request) {
     p.CharsetReader = CharsetReader
     err := p.DecodeElement(&monit, nil)
     if err != nil {
-        log.Fatal(err)
-    }
-
-    // log.Println("Got message from", monit.Server.Localhostname)
-
-    var shortname string
-    i := strings.Index(monit.Server.Localhostname, ".")
-    if i != -1 {
-        shortname = monit.Server.Localhostname[:i]
+        log.Println("Error from %s: %s",  req.RemoteAddr, err)
     } else {
-        shortname = monit.Server.Localhostname
-    }
+        // log.Println("Got message from", monit.Server.Localhostname)
 
-    for _, service := range monit.Service {
-        service.Prefix = shortname
-        serviceq <- service
+        var shortname string
+        i := strings.Index(monit.Server.Localhostname, ".")
+        if i != -1 {
+            shortname = monit.Server.Localhostname[:i]
+        } else {
+            shortname = monit.Server.Localhostname
+        }
+
+        for _, service := range monit.Service {
+            service.Prefix = shortname
+            serviceq <- service
+        }
     }
 }
 
@@ -290,6 +290,7 @@ func MonitServer(w http.ResponseWriter, req *http.Request) {
 func main() {
     flag.Parse()
 
+    if *debug { log.Println("Debug on, waiting for first message to dump then exit. ") }
     log.Println("Forwarding m/monit to ", *carbonAddress)
 
     graphite := &Graphite{addr: *carbonAddress}
