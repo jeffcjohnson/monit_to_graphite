@@ -266,7 +266,7 @@ func MonitServer(w http.ResponseWriter, req *http.Request) {
     p.CharsetReader = CharsetReader
     err := p.DecodeElement(&monit, nil)
     if err != nil {
-        log.Println("Error from %s: %s",  req.RemoteAddr, err)
+        log.Printf("Error from %s: %s\n",  req.RemoteAddr, err)
     } else {
         // log.Println("Got message from", monit.Server.Localhostname)
 
